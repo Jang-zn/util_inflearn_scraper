@@ -130,7 +130,7 @@ def extract_scripts_from_current_page(driver):
                     # 여기서 continue를 하면 아래 클릭 로직을 건너뛰고 다음 스크롤 시도로 넘어감
                     scroll_attempts += 1
                     if scroll_attempts >= max_scroll_attempts: break
-                    time.sleep(0.5)
+                    time.sleep(0.2)
                     continue # 다음 while 루프 반복으로
 
             if element_to_click:
