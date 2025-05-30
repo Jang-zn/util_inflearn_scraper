@@ -63,31 +63,44 @@ def execute_scraping_workflow(user_configs):
             print(f"'{course_name_ui}' 강의 선택 실패. 작업을 중단합니다.")
             return
         print(f"'{course_name_ui}' 강의 페이지로 성공적으로 이동했습니다.")
-        if not open_curriculum_tab(driver):
-            print("커리큘럼 탭 열기 실패. 작업을 중단합니다.")
-            return
         total_lecture_markdown_content = f"# 강의: {course_name_ui}\n\n"
         section_xpath = "//div[@data-accordion='true']/div[contains(@class, 'mantine-Accordion-item')]"
-        num_sections = len(driver.find_elements(By.XPATH, section_xpath))
+        lesson_xpath = ".//li[.//p[contains(@class, 'unit-title')]]"
         lesson_count = 0
-        for section_idx in range(num_sections):
+        # 섹션/강의 인덱스 기반 순회
+        section_idx = 0
+        while True:
+            if not open_curriculum_tab(driver):
+                print("커리큘럼 탭 열기 실패. 작업을 중단합니다.")
+                break
             sections = driver.find_elements(By.XPATH, section_xpath)
+            if section_idx >= len(sections):
+                break
             section = sections[section_idx]
             try:
                 section_name_elem = section.find_element(By.XPATH, ".//p[contains(@class, 'light-eahl1g')]")
                 section_name = section_name_elem.text.strip()
             except Exception:
                 section_name = f"섹션{section_idx+1}"
-            lesson_xpath = ".//li[.//p[contains(@class, 'unit-title')]]"
-            num_lessons = len(section.find_elements(By.XPATH, lesson_xpath))
-            for lesson_idx in range(num_lessons):
-                # 강의 리스트를 fresh하게 다시 가져옴
-                section = driver.find_elements(By.XPATH, section_xpath)[section_idx]
+            lessons = section.find_elements(By.XPATH, lesson_xpath)
+            lesson_idx = 0
+            while True:
+                # 커리큘럼 탭/섹션/강의 fresh하게 다시 가져옴
+                if not open_curriculum_tab(driver):
+                    print("커리큘럼 탭 열기 실패. 작업을 중단합니다.")
+                    break
+                sections = driver.find_elements(By.XPATH, section_xpath)
+                if section_idx >= len(sections):
+                    break
+                section = sections[section_idx]
                 lessons = section.find_elements(By.XPATH, lesson_xpath)
+                if lesson_idx >= len(lessons):
+                    break
                 lesson = lessons[lesson_idx]
                 try:
                     playtime_elem = lesson.find_elements(By.XPATH, ".//p[contains(@class, 'light-1wsq971') and contains(@class, 'mantine-1am8mhw')]")
                     if not playtime_elem or ':' not in playtime_elem[0].text:
+                        lesson_idx += 1
                         continue
                     lesson_title_elem = lesson.find_element(By.XPATH, ".//p[contains(@class, 'unit-title')]")
                     lesson_title = lesson_title_elem.text.strip()
@@ -96,6 +109,7 @@ def execute_scraping_workflow(user_configs):
                     time.sleep(1)
                     if not open_script_tab(driver):
                         print(f"'{section_name} - {lesson_title}' 스크립트 탭 열기 실패. 건너뜀.")
+                        lesson_idx += 1
                         continue
                     click_script_to_top(driver)
                     script_data = extract_scripts_from_current_page(driver)
@@ -116,7 +130,8 @@ def execute_scraping_workflow(user_configs):
                     total_lecture_markdown_content += current_lesson_markdown
                 except Exception as e:
                     print(f"'{section_name}' 섹션 내 강의 처리 중 오류: {e}")
-                    continue
+                lesson_idx += 1
+            section_idx += 1
         print("\n--- 모든 강의(챕터) 스크래핑 완료 ---")
         if total_lecture_markdown_content.strip() != f"# 강의: {course_name_ui}":
             total_filepath = get_total_filepath(lecture_save_dir, sanitize_filename(course_name_ui))

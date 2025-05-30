@@ -10,7 +10,7 @@ __pycache__/
 # IDE specific files
 .vscode/
 .idea/
-
+./output_lecture_scripts/
 # Output files (optional, if you don't want to track them)
 # output_lecture_scripts/
 # *.md 
