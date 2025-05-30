@@ -73,6 +73,11 @@ class AppUI:
             show_char = '' if entry_type != 'password' else '*'
             entry = ttk.Entry(row_frame, textvariable=var, show=show_char, width=35)
             entry.pack(side=tk.LEFT, expand=True, fill=tk.X)
+            # 붙여넣기 지원 (맥: Command+V, 윈도우/리눅스: Control+V)
+            entry.bind('<Command-v>', self._on_paste)
+            entry.bind('<Command-V>', self._on_paste)
+            entry.bind('<Control-v>', self._on_paste)
+            entry.bind('<Control-V>', self._on_paste)
             if label_text == "강의명:":
                 entry.focus_set()
 
@@ -116,6 +121,15 @@ class AppUI:
         finally:
             self.status_label.config(text="작업이 완료되었거나 중단되었습니다.")
             self.start_button.config(state=tk.NORMAL, text="스크립트 추출 시작")
+
+    def _on_paste(self, event):
+        try:
+            widget = event.widget
+            clipboard = widget.clipboard_get()
+            widget.insert(tk.INSERT, clipboard)
+        except Exception as e:
+            print(f'붙여넣기 실패: {e}')
+        return 'break'
 
 def launch_ui():
     """UI를 실행합니다. 실제 작업은 UI의 시작 버튼을 통해 트리거됩니다."""

@@ -3,18 +3,12 @@ import re # 파일명 정제를 위해 추가
 
 def sanitize_filename(filename):
     """파일명으로 사용할 수 없는 문자를 제거하거나 대체합니다."""
-    # 공백은 밑줄로 대체
     filename = filename.replace(" ", "_")
-    # 파일명으로 사용할 수 없는 특수문자 제거 (정규표현식 사용)
-    # 허용할 문자: 영숫자, 밑줄(_), 하이픈(-), 마침표(.)
-    # 한글도 포함하려면 정규식 수정 필요 (예: [^\w\s.-] 대신 더 관대한 패턴 사용)
-    # 현재는 기본적인 영문/숫자/일부 특수문자 기반으로 처리
-    filename = re.sub(r'[^a-zA-Z0-9_.-]', '', filename)
-    # 너무 긴 파일명 자르기 (선택적)
-    # max_len = 100
-    # if len(filename) > max_len:
-    #     name, ext = os.path.splitext(filename)
-    #     filename = name[:max_len - len(ext) -1] + ext
+    # 한글(가-힣), 영문, 숫자, _, -, . 만 허용
+    filename = re.sub(r'[^a-zA-Z0-9가-힣_.-]', '', filename)
+    # 빈 문자열이거나 _만 남은 경우 기본값
+    if not filename.strip('_'):
+        filename = "강의명없음"
     return filename
 
 def setup_lecture_directory(base_output_dir, lecture_name):

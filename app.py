@@ -8,7 +8,8 @@ from auth import login_to_inflearn
 from navigation import (
     navigate_to_my_courses, 
     select_course, 
-    select_chapter, 
+    open_curriculum_tab, 
+    select_first_available_lesson,
     open_script_tab, 
     go_to_next_chapter
 )
@@ -21,6 +22,10 @@ from file_utils import (
     get_total_filepath, 
     save_markdown_file
 )
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 
 def execute_scraping_workflow(user_configs):
     """UI로부터 설정값을 받아 스크래핑 전체 과정을 수행합니다."""
@@ -74,65 +79,91 @@ def execute_scraping_workflow(user_configs):
             print(f"'{course_name_ui}' 강의 선택 실패. 작업을 중단합니다.")
             return
         
-        # 모든 섹션의 내용을 통합 저장할 변수
-        total_lecture_markdown_content = f"# 강의: {course_name_ui}\n\n"
-        section_number = 0 # 섹션 번호 (파일 이름용)
+        print(f"'{course_name_ui}' 강의 페이지로 성공적으로 이동했습니다.")
 
-        # 첫 번째 "섹션"(또는 챕터리스트의 첫 항목) 선택
-        if not select_chapter(driver): # select_chapter가 첫번째 항목을 선택하도록 되어있다고 가정
-            print("첫 섹션(챕터) 선택 실패. 작업을 중단합니다.")
+        if not open_curriculum_tab(driver): # 커리큘럼이 닫혀있을 수 있으므로 항상 호출
+            print("커리큘럼 탭 열기 실패. 첫 강의로 이동할 수 없습니다.")
             return
 
-        while True:
-            section_number += 1
-            # 현재 "섹션"의 이름 가져오기 (실제로는 더 정확한 방법 필요)
-            # 예: 목차에서 현재 활성화된 섹션의 텍스트를 가져오거나, 페이지 내 h2/h3 태그 등
-            current_section_name_raw = driver.title # 임시로 페이지 타이틀 사용
-            sanitized_section_name = sanitize_filename(current_section_name_raw)
-            print(f"\n--- 섹션 {section_number}: '{current_section_name_raw}' (정제됨: '{sanitized_section_name}') 처리 시작 ---")
-
-            if not open_script_tab(driver):
-                print("스크립트 탭 열기 실패. 다음 섹션으로 이동합니다.")
-                total_lecture_markdown_content += f"## 섹션 {section_number}: {current_section_name_raw} (스크립트 추출 실패)\n\n"
-                if not go_to_next_chapter(driver): # 다음 섹션(챕터)으로 이동 시도
-                    print("다음 섹션(챕터) 이동 불가. 스크래핑 종료.")
-                    break
-                else:
-                    time.sleep(2) # 페이지 로드 대기
-                    continue
-            
-            time.sleep(1) # 스크립트 내용 로드 대기
-            
-            script_data = extract_scripts_from_current_page(driver)
-            
-            current_section_markdown = f"## 섹션 {section_number}: {current_section_name_raw}\n\n"
-            if script_data:
-                for index in sorted(script_data.keys()):
-                    timestamp, script_text = script_data[index]
-                    current_section_markdown += f"**{timestamp}**  \n{script_text}  \n\n"
-                print(f"'{current_section_name_raw}' 섹션 스크립트 {len(script_data)}개 추출 완료.")
-                
-                # 현재 섹션 스크립트를 개별 파일로 저장 (강의명폴더/섹션명_번호.md)
-                section_filepath = get_section_filepath(lecture_save_dir, sanitized_section_name, section_number)
-                save_markdown_file(section_filepath, current_section_markdown)
-            else:
-                current_section_markdown += "(스크립트 내용 없음)\n\n"
-                print(f"'{current_section_name_raw}' 섹션 스크립트 추출 실패 또는 내용 없음.")
-            
-            total_lecture_markdown_content += current_section_markdown # 통합본에 현재 섹션 내용 추가
-
-            if not go_to_next_chapter(driver): # 다음 섹션(챕터)으로 이동
-                print("모든 섹션(챕터) 완료 또는 다음으로 이동 불가.")
-                break
-            else:
-                print("다음 섹션(챕터)으로 이동합니다.")
-                time.sleep(3) # 페이지 로드 대기
+        if not select_first_available_lesson(driver): # 첫 번째 강의로 이동
+            print("첫 번째 유효한 강의 선택 실패. 작업을 중단합니다.")
+            return
         
-        print("\n--- 모든 섹션 스크래핑 완료 ---")
+        # 첫 번째 강의가 성공적으로 선택되었으므로, 이제 루프를 시작합니다.
+        
+        total_lecture_markdown_content = f"# 강의: {course_name_ui}\n\n"
+        lesson_number = 0 # 강의(챕터) 번호
+
+        while True:
+            lesson_number += 1
+            current_lesson_name_raw = ""
+            sanitized_lesson_name = ""
+
+            # 현재 강의(챕터) 이름 가져오기 (TODO 5 관련)
+            try:
+                # video_title_area h1, lecture-title h1, title h1 등 다양한 가능성 고려
+                title_xpath = "//div[contains(@class,'video_title_area')]//h1 | //div[contains(@class, 'lecture-title')]//h1 | //h1[contains(@class, 'title') and not(ancestor::header)]"
+                # 헤더의 h1은 사이트 전체 제목일 수 있으므로 제외 (좀 더 구체적인 상황에 따라 조정 필요)
+                lesson_title_element = WebDriverWait(driver, 10).until(
+                    EC.visibility_of_element_located((By.XPATH, title_xpath))
+                )
+                current_lesson_name_raw = lesson_title_element.text.strip()
+                if not current_lesson_name_raw: # 안전장치
+                    current_lesson_name_raw = f"강의_{lesson_number}"
+                print(f"\n--- 현재 강의(챕터) {lesson_number}: '{current_lesson_name_raw}' 처리 시작 ---")
+            except TimeoutException:
+                print(f"오류: 현재 강의(챕터) {lesson_number}의 제목을 가져올 수 없습니다 (시간 초과). 기본 이름을 사용합니다.")
+                current_lesson_name_raw = f"알수없는_강의_{lesson_number}"
+            except Exception as e_title:
+                print(f"오류: 현재 강의(챕터) {lesson_number}의 제목 가져오기 중 예외 발생: {e_title}. 기본 이름을 사용합니다.")
+                current_lesson_name_raw = f"오류발생_강의_{lesson_number}"
+            
+            sanitized_lesson_name = sanitize_filename(current_lesson_name_raw if current_lesson_name_raw else f"강의_{lesson_number}")
+
+            if not open_script_tab(driver): 
+                print(f"'{current_lesson_name_raw}' 강의의 스크립트 탭 열기 실패. 이 강의는 건너뜁니다.")
+                total_lecture_markdown_content += f"## {lesson_number}. {current_lesson_name_raw} (스크립트 추출 실패 - 탭 열기 오류)\n\n"
+            else:
+                # 스크립트 내용 로드 최종 대기 (open_script_tab 내부에도 대기가 있지만, 추가적인 안정성 확보)
+                try:
+                    WebDriverWait(driver, 5).until(
+                        EC.visibility_of_element_located((By.XPATH, "//aside[contains(@class, 'tab-aside')]//div[contains(@class, 'html_content_area_attr_pc')] | //aside[contains(@class, 'tab-aside')]//div[contains(@class, 'dashboard_aside_scroll_area_hidden')]//div[contains(@class, 'dashboard_aside_content__text')]"))
+                    )
+                except TimeoutException:
+                    print(f"'{current_lesson_name_raw}' 강의의 스크립트 내용 컨테이너 표시 시간 초과. 스크래핑을 시도합니다.")
+
+                script_data = extract_scripts_from_current_page(driver)
+                
+                current_lesson_markdown = f"## {lesson_number}. {current_lesson_name_raw}\n\n"
+                if script_data:
+                    for index in sorted(script_data.keys()):
+                        timestamp, script_text = script_data[index]
+                        current_lesson_markdown += f"**{timestamp}**  \n{script_text}  \n\n"
+                    print(f"'{current_lesson_name_raw}' 스크립트 {len(script_data)}개 추출 완료.")
+                    
+                    # 개별 강의(챕터) 스크립트 파일 저장
+                    lesson_filepath = get_section_filepath(lecture_save_dir, sanitized_lesson_name, lesson_number) # 기존 함수 재활용 (이름은 lesson으로)
+                    save_markdown_file(lesson_filepath, current_lesson_markdown)
+                else:
+                    current_lesson_markdown += "(스크립트 내용 없음)\n\n"
+                    print(f"'{current_lesson_name_raw}' 스크립트 추출 실패 또는 내용 없음.")
+                
+                total_lecture_markdown_content += current_lesson_markdown
+            
+            # 다음 강의(챕터)로 이동
+            print(f"'{current_lesson_name_raw}' 강의 처리 완료. 다음 강의로 이동을 시도합니다.")
+            if not go_to_next_chapter(driver):
+                print("모든 강의(챕터) 완료 또는 다음으로 이동 불가. 스크래핑을 종료합니다.")
+                break 
+            else:
+                print("다음 강의(챕터)로 성공적으로 이동했습니다. 계속 진행합니다.")
+                time.sleep(2) # 새 페이지/콘텐츠 로드 대기
+
+        print("\n--- 모든 강의(챕터) 스크래핑 완료 ---")
         
         # 전체 강의 내용을 담은 _total.md 파일 저장
-        if total_lecture_markdown_content.strip() != f"# 강의: {course_name_ui}": # 내용이 있는지 확인
-            total_filepath = get_total_filepath(lecture_save_dir, sanitized_course_name)
+        if total_lecture_markdown_content.strip() != f"# 강의: {course_name_ui}": 
+            total_filepath = get_total_filepath(lecture_save_dir, sanitize_filename(course_name_ui)) # 강의명도 sanitize
             if save_markdown_file(total_filepath, total_lecture_markdown_content):
                 print(f"전체 강의 스크립트가 {total_filepath} 파일로 저장되었습니다.")
             else:

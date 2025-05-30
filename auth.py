@@ -2,12 +2,54 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
+from selenium.common.exceptions import TimeoutException
 
 def login_to_inflearn(driver, email, password):
     """인프런에 로그인합니다."""
     print("\n인프런 메인 페이지로 이동 중...")
     driver.get("https://www.inflearn.com/")
     print(f"현재 URL: {driver.current_url}")
+
+    # --- 추가된 배너 닫기 로직 시작 ---
+    try:
+        print("배너 확인 중 (hackle-iam-banner)...")
+        # 배너가 로드될 시간을 약간 기다립니다. (필요에 따라 조절)
+        # 클래스명에 공백이 있을 수 있으므로, contains를 사용하고 정확한 클래스명 중 하나를 지정하거나,
+        # 여러 클래스명이 항상 고정 순서라면 정확히 일치시킬 수도 있습니다.
+        # 여기서는 'hackle-iam-banner'가 포함된 div를 찾습니다.
+        banner_div_xpath = "//div[contains(@class, 'hackle-iam-banner')]"
+        
+        # 배너가 나타날 때까지 최대 5초 대기
+        banner_element = WebDriverWait(driver, 5).until(
+            EC.visibility_of_element_located((By.XPATH, banner_div_xpath))
+        )
+        print("Hackle 배너가 확인되었습니다.")
+
+        # 배너 하위의 닫기 버튼 (span[role="button"]) 찾기
+        # banner_element 기준으로 하위 요소를 찾으면 더 안정적일 수 있습니다.
+        # banner_close_button_xpath = ".//span[@role='button']" # banner_element 기준
+        # 여기서는 전체 문서에서 찾도록 합니다. 배너 구조가 단순하다면 괜찮습니다.
+        banner_close_button_xpath = f"{banner_div_xpath}//span[@role='button']"
+        
+        print("배너 닫기 버튼 확인 중...")
+        close_button = WebDriverWait(driver, 5).until(
+            EC.element_to_be_clickable((By.XPATH, banner_close_button_xpath))
+        )
+        
+        print("배너 닫기 버튼 클릭 시도...")
+        close_button.click()
+        print("배너 닫기 버튼 클릭 완료.")
+
+        # 배너가 실제로 사라질 때까지 기다림
+        WebDriverWait(driver, 5).until(
+            EC.invisibility_of_element_located((By.XPATH, banner_div_xpath))
+        )
+        print("배너가 성공적으로 닫혔거나 사라졌습니다.")
+    except TimeoutException:
+        print("배너(hackle-iam-banner)가 5초 내에 나타나지 않았거나, 배너/닫기 버튼 관련 시간 초과. 계속 진행합니다.")
+    except Exception as e_banner:
+        print(f"배너 처리 중 오류 발생 (무시하고 계속 진행): {e_banner}")
+    # --- 추가된 배너 닫기 로직 끝 ---
 
     print("로그인 버튼 대기 중...")
     login_button = WebDriverWait(driver, 10).until(
@@ -42,7 +84,7 @@ def login_to_inflearn(driver, email, password):
     # 로그인 성공 여부 확인 (예: 특정 요소가 나타나는지 확인)
     try:
         WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "img[alt='profile']")) # 프로필 이미지가 보이면 로그인 성공으로 간주
+            EC.presence_of_element_located((By.CSS_SELECTOR, "img[alt$='프로필 이미지']")) # alt가 '프로필 이미지'로 끝나는 img
         )
         print("로그인 성공 확인.")
         return True
